@@ -24,11 +24,11 @@ function Hero() {
             Turn long videos into viral-ready Shorts
           </h1>
           <p className="mt-4 max-w-2xl text-white/80">
-            Upload any video, set duration, auto-generate subtitles, and download instantly. Get a viral score to predict performance.
+            Upload a file or paste a YouTube link, set duration, auto-generate subtitles with styles, and download instantly.
           </p>
           <ul className="mt-6 flex flex-wrap gap-4 text-sm text-white/70">
-            <li className="rounded-full bg-white/10 px-3 py-1">AI Subtitle Modes</li>
-            <li className="rounded-full bg-white/10 px-3 py-1">Smart Duration</li>
+            <li className="rounded-full bg-white/10 px-3 py-1">AI Subtitles</li>
+            <li className="rounded-full bg-white/10 px-3 py-1">Style Templates</li>
             <li className="rounded-full bg-white/10 px-3 py-1">Viral Score</li>
             <li className="rounded-full bg-white/10 px-3 py-1">One-click Download</li>
           </ul>
@@ -38,15 +38,49 @@ function Hero() {
   )
 }
 
+const SUB_TEMPLATES = [
+  { key: 'clean', name: 'Clean Minimal' },
+  { key: 'karaoke', name: 'Karaoke Highlight' },
+  { key: 'bold-shadow', name: 'Bold + Shadow' },
+  { key: 'neon', name: 'Neon Glow' },
+]
+
+const EFFECTS = [
+  { key: 'zoom', name: 'Auto Zoom/Punch' },
+  { key: 'shake', name: 'Camera Shake' },
+  { key: 'flash', name: 'Flash Beats' },
+  { key: 'color-pop', name: 'Color Pop' },
+  { key: 'bokeh', name: 'Bokeh Blur' },
+]
+
 function UploadPanel({ onCreated }) {
+  const [sourceType, setSourceType] = useState('upload') // upload | youtube
   const [file, setFile] = useState(null)
+  const [youtubeUrl, setYoutubeUrl] = useState('')
+
   const [duration, setDuration] = useState(60)
   const [subtitleMode, setSubtitleMode] = useState('auto')
   const [customText, setCustomText] = useState('')
+  const [language, setLanguage] = useState('en')
+  const [template, setTemplate] = useState('clean')
+  const [position, setPosition] = useState('bottom')
+  const [offsetY, setOffsetY] = useState(0)
+  const [effects, setEffects] = useState([])
+  const [aspectRatio, setAspectRatio] = useState('9:16')
+  const [resolution, setResolution] = useState('1080p')
+  const [hardSub, setHardSub] = useState(false)
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const canSubmit = useMemo(() => !!file && duration >= 5 && duration <= 180 && (!loading), [file, duration, loading])
+  const canSubmit = useMemo(() => {
+    const hasSource = sourceType === 'upload' ? !!file : (youtubeUrl.trim().length > 0)
+    return hasSource && duration >= 5 && duration <= 180 && !loading
+  }, [sourceType, file, youtubeUrl, duration, loading])
+
+  const toggleEffect = (key) => {
+    setEffects((prev) => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -55,16 +89,33 @@ function UploadPanel({ onCreated }) {
     setError('')
     try {
       const form = new FormData()
-      form.append('file', file)
+      form.append('source_type', sourceType)
+      if (sourceType === 'upload') {
+        form.append('file', file)
+      } else {
+        form.append('youtube_url', youtubeUrl.trim())
+      }
       form.append('duration_seconds', String(duration))
       form.append('subtitle_mode', subtitleMode)
       if (subtitleMode === 'custom' && customText.trim()) form.append('custom_subtitle_text', customText.trim())
+      if (language) form.append('subtitle_language', language)
+
+      // styling
+      form.append('subtitle_template', template)
+      form.append('subtitle_position', position)
+      form.append('subtitle_offset_y', String(offsetY))
+      form.append('video_effects', effects.join(','))
+      form.append('aspect_ratio', aspectRatio)
+      form.append('resolution', resolution)
+      form.append('hard_subtitles', String(hardSub))
 
       const res = await fetch(`${BACKEND}/api/jobs`, { method: 'POST', body: form })
-      if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
+      if (!res.ok) throw new Error(`Submit failed: ${res.status}`)
       const data = await res.json()
       onCreated?.(data)
+      // reset minimal
       setFile(null)
+      setYoutubeUrl('')
       setCustomText('')
     } catch (err) {
       setError(err.message)
@@ -74,43 +125,132 @@ function UploadPanel({ onCreated }) {
   }
 
   return (
-    <div className="-mt-20 mx-auto max-w-5xl px-6">
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-6 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur sm:grid-cols-2">
-        <div className="col-span-1 sm:col-span-2">
-          <label className="block text-sm font-medium text-white/80">Source video</label>
-          <div className="mt-2 flex items-center gap-3">
-            <input type="file" accept="video/*" onChange={(e)=>setFile(e.target.files?.[0] || null)} className="block w-full rounded-md border border-white/20 bg-black/30 p-2 text-sm text-white file:mr-4 file:rounded-md file:border-0 file:bg-indigo-500 file:px-4 file:py-2 file:text-white" />
+    <div className="-mt-20 mx-auto max-w-6xl px-6">
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-6 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+        {/* Source selection */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="sm:col-span-1">
+            <label className="block text-sm font-medium text-white/80">Source</label>
+            <div className="mt-2 flex gap-3 text-sm">
+              <button type="button" onClick={()=>setSourceType('upload')} className={classNames('rounded-md px-3 py-2', sourceType==='upload' ? 'bg-indigo-500 text-white' : 'bg-white/10 text-white/70')}>Upload</button>
+              <button type="button" onClick={()=>setSourceType('youtube')} className={classNames('rounded-md px-3 py-2', sourceType==='youtube' ? 'bg-indigo-500 text-white' : 'bg-white/10 text-white/70')}>YouTube</button>
+            </div>
           </div>
-          {file && <p className="mt-1 text-xs text-white/60">Selected: {file.name}</p>}
+
+          {sourceType === 'upload' ? (
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-medium text-white/80">Upload file</label>
+              <input type="file" accept="video/*" onChange={(e)=>setFile(e.target.files?.[0] || null)} className="mt-2 block w-full rounded-md border border-white/20 bg-black/30 p-2 text-sm text-white file:mr-4 file:rounded-md file:border-0 file:bg-indigo-500 file:px-4 file:py-2 file:text-white" />
+              {file && <p className="mt-1 text-xs text-white/60">Selected: {file.name}</p>}
+            </div>
+          ) : (
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-medium text-white/80">YouTube link</label>
+              <input type="url" placeholder="https://www.youtube.com/watch?v=..." value={youtubeUrl} onChange={(e)=>setYoutubeUrl(e.target.value)} className="mt-2 w-full rounded-md border border-white/20 bg-black/30 p-2 text-white" />
+              <p className="mt-1 text-xs text-white/50">We will fetch the video server-side.</p>
+            </div>
+          )}
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-white/80">Duration (seconds)</label>
-          <input type="number" min={5} max={180} value={duration} onChange={e=>setDuration(parseInt(e.target.value||'0',10))} className="mt-2 w-full rounded-md border border-white/20 bg-black/30 p-2 text-white" />
-          <p className="mt-1 text-xs text-white/60">Recommended 30-60 for Shorts</p>
-        </div>
+        {/* Core options */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div>
+            <label className="block text-sm font-medium text-white/80">Duration (seconds)</label>
+            <input type="number" min={5} max={180} value={duration} onChange={e=>setDuration(parseInt(e.target.value||'0',10))} className="mt-2 w-full rounded-md border border-white/20 bg-black/30 p-2 text-white" />
+            <p className="mt-1 text-xs text-white/60">Recommended 30-60 for Shorts</p>
+          </div>
 
-        <div>
-          <label className="block text-sm font-medium text-white/80">Subtitles</label>
-          <select value={subtitleMode} onChange={(e)=>setSubtitleMode(e.target.value)} className="mt-2 w-full rounded-md border border-white/20 bg-black/30 p-2 text-white">
-            <option value="none">None</option>
-            <option value="auto">Auto</option>
-            <option value="custom">Custom text</option>
-          </select>
+          <div>
+            <label className="block text-sm font-medium text-white/80">Subtitles</label>
+            <select value={subtitleMode} onChange={(e)=>setSubtitleMode(e.target.value)} className="mt-2 w-full rounded-md border border-white/20 bg-black/30 p-2 text-white">
+              <option value="none">None</option>
+              <option value="auto">Auto</option>
+              <option value="custom">Custom text</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-white/80">Language</label>
+            <select value={language} onChange={(e)=>setLanguage(e.target.value)} className="mt-2 w-full rounded-md border border-white/20 bg-black/30 p-2 text-white">
+              <option value="auto">Auto-detect</option>
+              <option value="en">English</option>
+              <option value="id">Indonesian</option>
+              <option value="es">Spanish</option>
+              <option value="hi">Hindi</option>
+              <option value="jp">Japanese</option>
+            </select>
+          </div>
         </div>
 
         {subtitleMode === 'custom' && (
-          <div className="sm:col-span-2">
+          <div>
             <label className="block text-sm font-medium text-white/80">Custom subtitle text</label>
             <textarea value={customText} onChange={(e)=>setCustomText(e.target.value)} rows={3} className="mt-2 w-full rounded-md border border-white/20 bg-black/30 p-3 text-white" placeholder="Type subtitle lines or script..." />
           </div>
         )}
 
+        {/* Subtitle styling */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div>
+            <label className="block text-sm font-medium text-white/80">Subtitle template</label>
+            <select value={template} onChange={(e)=>setTemplate(e.target.value)} className="mt-2 w-full rounded-md border border-white/20 bg-black/30 p-2 text-white">
+              {SUB_TEMPLATES.map(t => <option key={t.key} value={t.key}>{t.name}</option>)}
+            </select>
+            <p className="mt-1 text-xs text-white/50">Example styles: Clean, Karaoke highlight, Neon glow.</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-white/80">Subtitle position</label>
+            <select value={position} onChange={(e)=>setPosition(e.target.value)} className="mt-2 w-full rounded-md border border-white/20 bg-black/30 p-2 text-white">
+              <option value="top">Top</option>
+              <option value="middle">Middle</option>
+              <option value="bottom">Bottom</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-white/80">Vertical offset (px)</label>
+            <input type="number" value={offsetY} onChange={(e)=>setOffsetY(parseInt(e.target.value || '0', 10))} className="mt-2 w-full rounded-md border border-white/20 bg-black/30 p-2 text-white" />
+          </div>
+        </div>
+
+        {/* Effects and output */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium text-white/80">Video effects</label>
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {EFFECTS.map(eff => (
+                <label key={eff.key} className={classNames('flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm', effects.includes(eff.key) && 'bg-indigo-500/20 border-indigo-500/40') }>
+                  <input type="checkbox" checked={effects.includes(eff.key)} onChange={()=>toggleEffect(eff.key)} />
+                  <span>{eff.name}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-white/80">Output</label>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <select value={aspectRatio} onChange={(e)=>setAspectRatio(e.target.value)} className="rounded-md border border-white/20 bg-black/30 p-2 text-white">
+                <option value="9:16">9:16</option>
+                <option value="1:1">1:1</option>
+                <option value="4:5">4:5</option>
+                <option value="16:9">16:9</option>
+              </select>
+              <select value={resolution} onChange={(e)=>setResolution(e.target.value)} className="rounded-md border border-white/20 bg-black/30 p-2 text-white">
+                <option value="720p">720p</option>
+                <option value="1080p">1080p</option>
+              </select>
+              <label className="col-span-2 mt-1 flex items-center gap-2 text-sm text-white/80">
+                <input type="checkbox" checked={hardSub} onChange={(e)=>setHardSub(e.target.checked)} />
+                <span>Burn subtitles (hard-sub)</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
         {error && (
-          <div className="sm:col-span-2 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-red-200 text-sm">{error}</div>
+          <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-red-200 text-sm">{error}</div>
         )}
 
-        <div className="sm:col-span-2 flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button type="submit" disabled={!canSubmit} className={classNames('inline-flex items-center justify-center rounded-lg px-5 py-2.5 text-sm font-semibold transition', canSubmit ? 'bg-indigo-500 hover:bg-indigo-600 text-white' : 'bg-white/10 text-white/40')}>{loading ? 'Processing...' : 'Create Clip'}</button>
           <a href="#recent" className="text-sm text-white/70 hover:text-white">See recent jobs</a>
         </div>
